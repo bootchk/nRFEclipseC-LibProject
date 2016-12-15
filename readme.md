@@ -2,7 +2,7 @@ A minimal Eclipse project for two targets in the nRF5x family of embedded radios
 
 If you don't use Eclipse and nRF5x, it's not interesting.  The value is in the Eclipse project's build and debug configurations, for learning or modifying.
 
-As shipped, main() just tests another library.
+As shipped, main() just tests another library.  Originally, it tested library nRFCounter, but now that is folded into the library nRF5x.  Thus the name testnRFCounter is a relic.
 
 
 Motivation
@@ -45,7 +45,7 @@ Choose a build configuration:  right mouse click on the project and choose *Prop
 
 Start the build:  click on the hammer icon, or choose *Project>Build All*
 
-The project uses a library and its header from another project (nRFCounter).  You might need to build that project and copy the library and header into this project.
+The project uses a library and its header from another project (nRF5x).  You might need to build that project and copy the library and header into this project.
 
 If you are using a version of the NRF\_SDK other than v12, you might need to refresh files that were copied from the NRF_SDK (see below.)
 
@@ -86,9 +86,9 @@ Contains target independendent source.
 
 main.cpp minimally tests a library.  (The only target dependence in main.cpp is "include nrf.h" from the NRF_SDK, needed for the sleep() function, which should itself be in a library.)
 
-The library is minimal. It simply wraps the "RTC" counter/compare device of the target.  nRFCounter.h is its target independent header.  The library is lowest common denominator: only supports features/peripheral/devices found on both targets.  libnRFCounter52.a or 51.a are the libraries, statically compiled for a target (specific to an mcu architecture.)
+The library is minimal.  nRF5x.h is its target independent header, found via an include path using variable MY_SDK.  The library is lowest common denominator: only supports features/peripheral/devices found on both targets.  libnRF5x52.a or 51.a are the libraries, statically compiled for a target (specific to an mcu architecture.)
 
-SEGGER_RTT... files are for logging using a SEGGER debug probe.  Again, copied from the SDK but should be soft linked.
+The library provides logging via SEGGER RTT.
 
 
 nrf51 and nrf52 directories
@@ -104,7 +104,7 @@ system\_nrf52.cpp defines patches for the chip.  (I don't really understand how 
 libraries
 -
 
-The project top level contains target specific static libraries libnRFCounter52.a and ...51.a.  
+The project top level contains target specific static libraries libnRF5x52.a and ...51.a.  
 
 *Properties>C/C++ General>Settings>Cross ARM C++ Linker>Libraries>Libraries* choses one.
 
