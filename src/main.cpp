@@ -1,118 +1,86 @@
 
-/*
- * Example main.
- * Tests using a c++ static library implementing LongClockTimer
- * With debug logging using Segger RTT.
- */
-
-// API of static library
-#include "nRF5x.h"
+#include "nrf_power.h"
+#include "nrf_delay.h"
 
 
+void startHFClock() {
+	/* Start 16 MHz crystal oscillator */
+	NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
+	NRF_CLOCK->TASKS_HFCLKSTART = 1;
 
-#ifdef OLD
-Used when testing nRFCounter project, which is now folded into nRF5x library
-
-To revert, need:
-nRFCounter.a
-SEGGER_printf.c etc
-a few other mods below in the changed API to nRFCounter
-
-#include "nRFCounter.h"
-
-#include "SEGGER_RTT.h"
-void logLongLong(uint64_t value ){
-	// Print on one line
-	(void) SEGGER_RTT_printf(0, "x%04x", *(((uint32_t*) &value) + 1)  );	// MS word
-	(void) SEGGER_RTT_printf(0, "%04x\n", value);	// LS word and newline
-}
-void log(char * string) {
-
+	/* Wait for the external oscillator to start up */
+	while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0) {}
 }
 
 
-#include "nrf.h"	// SEV
-void sleep() {
-	__SEV();
-	__WFE();	// Since internal event flag is set, this clears it without sleeping
-	__WFE();	// This actually sleeps until event
-}
-
-#define First 0
-#define Second 1
-#define Third 2
-
+void delay() {
+	__ASM volatile (
+#if ( defined(__GNUC__) && (__CORTEX_M == (0x00U) ) )
+			".syntax unified\n"
 #endif
-
-
-MCU mcu;
-Nvic nvic;
-LongClockTimer longClockTimer;
-
-
-// Nothing, just wakes us.
-void timeoutCallback0() {log("Timeout 0\n");}
-void timeoutCallback1() {log("Timeout 1\n");}
-void timeoutCallback2() {log("Timeout 2\n");}
-
-
-
-
-
-void timerPattern0() {
-	// Keep all timers running
-	// Expires 1,1,0,1,1,0,2,.... more or less
-	if (! longClockTimer.isTimerStarted(First)) {
-		longClockTimer.startTimer(First, 20000, timeoutCallback0 );
-	}
-
-	if (! longClockTimer.isTimerStarted(Second)) {
-		longClockTimer.startTimer(Second, 10000, timeoutCallback1 );
-	}
-
-	if (! longClockTimer.isTimerStarted(Third)) {
-		longClockTimer.startTimer(Third, 40000, timeoutCallback2 );
-	}
+			" NOP\n"
+	);
 }
 
-
-void timerPattern1() {
-	// Should expire 0,1,2,0,1,2,...
-	if (! longClockTimer.isTimerStarted(First)) {
-		longClockTimer.startTimer(First, 20000, timeoutCallback0 );
-	}
-	else longClockTimer.cancelTimer(First);
-
-	if (! longClockTimer.isTimerStarted(Second)) {
-		longClockTimer.startTimer(Second, 10000, timeoutCallback1 );
-	}
-	else longClockTimer.cancelTimer(Second);
-
-	if (! longClockTimer.isTimerStarted(Third)) {
-		longClockTimer.startTimer(Third, 40000, timeoutCallback2 );
-	}
+void delay2() {
+	__ASM volatile (
+			" NOP\n"
+	);
 }
 
+void delay3() {
+
+}
+
+/*
+ * Test whether POFCON requires a delay, or whether as Product Spec says:
+ * " This event will also be generated if the supply voltage is already below VPOF at the time the POF is enabled,
+ *  or if VPOF is re-configured to a level above the supply voltage."
+ *
+ * To test: power unit with 1.9V, break into running function with debugger and check value of counters.
+ * Since Vcc is 1.9V, vccGreater should never be non-zero and vccLess should be non-zero.
+ */
 int main() {
-	// assert embedded system startup is done and calls main.
 
-	initLogging();
+	uint64_t vccLess = 0;
+	uint64_t vccGreater = 0;
 
-	longClockTimer.init(&nvic);
+	// POFCON requires 1v2 power supply.  This ensures it.
+	// According to PS rev3:
+	// "To save power, the power-fail comparator is not active in System OFF or in System ON when HFCLK is not running."
+	startHFClock();
 
 	while (true) {
-		// delay
-		for(int i=0; i++; i<10000) {
-			int j = 0;
-			j++;
-		}
 
-		logLongLong( longClockTimer.nowTime() );
+		// assert event is clear and POFCON is disabled
+		// assert 1v2 power rail is active
 
-		timerPattern1();
+		// set threshold and enable
+		nrf_power_pofcon_set(true, NRF_POWER_POFTHR_V23);
+		//NRF_POWER->POFCON = 0X15;	// Equivalent to above
 
-		mcu.sleep();
-		// woken by timeout or other event (rollover of LongClock)
+		(void) NRF_POWER->POFCON;	// flush arm write cache
+
+		// POFCON sets event if Vcc less than threshold, event remains clear otherwise
+
+		// >>>>>  Crux:  Some delay seems necessary, but undocumented?
+		// Without this delay, event is not set before we check it below.
+		// nrf_delay_us(1);
+		//delay3();
+
+		bool isPOF = nrf_power_event_check(NRF_POWER_EVENT_POFWARN);
+
+		// Log for debugger to read
+		if (isPOF)
+			vccLess += 1;
+		else
+			vccGreater +=1;
+
+		// disable
+		nrf_power_pofcon_set(false, NRF_POWER_POFTHR_V23);
+
+		nrf_power_event_clear(NRF_POWER_EVENT_POFWARN);
+
 	}
 
 	return 0;
